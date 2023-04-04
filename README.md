@@ -25,6 +25,6 @@ Render every card as individual components and more.
     ```
 4. Install plugin to Across the Obelisk
     ```sh
-    cp bin\Release\netstandard2.1\AtOCardRenderer "..\Across the Obelisk\BepInEx\plugins\AtOCardRenderer.dll"
+    cp bin\Release\netstandard2.1\AtOCardRenderer.dll "..\Across the Obelisk\BepInEx\plugins\AtOCardRenderer.dll"
     ```
 5. Launch game

@@ -28,3 +28,7 @@ Render every card as individual components and more.
     cp bin\Release\netstandard2.1\AtOCardRenderer.dll "..\Across the Obelisk\BepInEx\plugins\AtOCardRenderer.dll"
     ```
 5. Launch game
+
+# Info
+- The rendered cards are saved to the RenderResults folder in the game install folder. `..\Across the Obelisk\RenderResults`
+- A CSV summary of the rendered cards is saved to RenderSummary.csv in the game install folder. `..\Across the Obelisk\RenderSummary.csv`

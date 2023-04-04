@@ -32,3 +32,4 @@ Render every card as individual components and more.
 # Info
 - The rendered cards are saved to the RenderResults folder in the game install folder. `..\Across the Obelisk\RenderResults`
 - A CSV summary of the rendered cards is saved to RenderSummary.csv in the game install folder. `..\Across the Obelisk\RenderSummary.csv`
+- This plugin takes full control and prevents playing the game. **Remove the plugin when not in use.**

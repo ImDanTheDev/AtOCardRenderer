@@ -93,6 +93,13 @@ namespace AtOCCardRenderer
             {
                 _cardItem.SetCard(card.Id, true, null, null, false, false);
                 Render(card.Id + "_Full");
+                if (_config.onlyRenderFullCards)
+                {
+                    _cardsRendered++;
+                    _csv.AddCard(card, toRender);
+                    yield return null;
+                    continue;
+                }
                 GameObject cardGO = _cardItem.transform.Find("CardGO").gameObject;
 
                 var lockGO = _cardItem.transform.Find("Lock").gameObject;
@@ -129,6 +136,7 @@ namespace AtOCCardRenderer
                 skipped.ForEach(x => x.SetActive(true));
 
                 toRender.Clear();
+                skipped.Clear();
 
                 _csv.AddCard(card, toRender);
 
@@ -200,6 +208,8 @@ namespace AtOCCardRenderer
             {
                 _config.rangeEnd = Mathf.Clamp(rei, 0, _cardCount - 1);
             }
+
+            _config.onlyRenderFullCards = GUILayout.Toggle(_config.onlyRenderFullCards, "Only render assembled cards");
 
             if (GUILayout.Button("Render Range"))
             {
@@ -328,6 +338,8 @@ namespace AtOCCardRenderer
 
             public int rangeStart = 0;
             public int rangeEnd = 5;
+
+            public bool onlyRenderFullCards;
 
             public RenderConfig() { }
         }

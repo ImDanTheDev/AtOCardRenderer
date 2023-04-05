@@ -20,21 +20,7 @@ namespace AtOCCardRenderer
         private Texture2D _exportTexture;
         private CardItem _cardItem;
 
-        private int _renderTextureWidth = 800;
-        private int _renderTextureHeight = 768;
-        private int _exportTextureWidth = 400;
-        private int _exportTextureHeight = 600;
-
-        private float _srcX = 200f;
-        private float _srcY = 85f;
-        private float _srcWidth = 600f;
-        private float _srcHeight = 768f;
-
-        private int _dstX = 0;
-        private int _dstY = 0;
-
-        private int _rangeStart = 0;
-        private int _rangeEnd = 5;
+        private RenderConfig _config;
 
         private IEnumerator _renderTask;
         private string _csvHeader;
@@ -62,27 +48,27 @@ namespace AtOCCardRenderer
             if (_showAdvanced)
             {
                 GUILayout.Label("RT Width");
-                if (int.TryParse(GUILayout.TextField(_renderTextureWidth.ToString()), out int rtw)) _renderTextureWidth = rtw;
+                if (int.TryParse(GUILayout.TextField(_config.renderTextureWidth.ToString()), out int rtw)) _config.renderTextureWidth = rtw;
                 GUILayout.Label("RT Height");
-                if (int.TryParse(GUILayout.TextField(_renderTextureHeight.ToString()), out int rth)) _renderTextureHeight = rth;
+                if (int.TryParse(GUILayout.TextField(_config.renderTextureHeight.ToString()), out int rth)) _config.renderTextureHeight = rth;
                 GUILayout.Label("ET Width");
-                if (int.TryParse(GUILayout.TextField(_exportTextureWidth.ToString()), out int etw)) _exportTextureWidth = etw;
+                if (int.TryParse(GUILayout.TextField(_config.exportTextureWidth.ToString()), out int etw)) _config.exportTextureWidth = etw;
                 GUILayout.Label("ET Height");
-                if (int.TryParse(GUILayout.TextField(_exportTextureHeight.ToString()), out int eth)) _exportTextureHeight = eth;
+                if (int.TryParse(GUILayout.TextField(_config.exportTextureHeight.ToString()), out int eth)) _config.exportTextureHeight = eth;
 
                 GUILayout.Label("Src X");
-                if (float.TryParse(GUILayout.TextField(_srcX.ToString()), out float srcx)) _srcX = srcx;
+                if (float.TryParse(GUILayout.TextField(_config.srcX.ToString()), out float srcx)) _config.srcX = srcx;
                 GUILayout.Label("Src Y");
-                if (float.TryParse(GUILayout.TextField(_srcY.ToString()), out float srcy)) _srcY = srcy;
+                if (float.TryParse(GUILayout.TextField(_config.srcY.ToString()), out float srcy)) _config.srcY = srcy;
                 GUILayout.Label("Src Width");
-                if (float.TryParse(GUILayout.TextField(_srcWidth.ToString()), out float srcw)) _srcWidth = srcw;
+                if (float.TryParse(GUILayout.TextField(_config.srcWidth.ToString()), out float srcw)) _config.srcWidth = srcw;
                 GUILayout.Label("Src Height");
-                if (float.TryParse(GUILayout.TextField(_srcHeight.ToString()), out float srch)) _srcHeight = srch;
+                if (float.TryParse(GUILayout.TextField(_config.srcHeight.ToString()), out float srch)) _config.srcHeight = srch;
 
                 GUILayout.Label("Dst X");
-                if (int.TryParse(GUILayout.TextField(_dstX.ToString()), out int dstx)) _dstX = dstx;
+                if (int.TryParse(GUILayout.TextField(_config.dstX.ToString()), out int dstx)) _config.dstX = dstx;
                 GUILayout.Label("Dst Y");
-                if (int.TryParse(GUILayout.TextField(_dstY.ToString()), out int dsty)) _dstY = dsty;
+                if (int.TryParse(GUILayout.TextField(_config.dstY.ToString()), out int dsty)) _config.dstY = dsty;
 
                 if (GUILayout.Button("Apply Advanced Settings"))
                 {
@@ -96,21 +82,21 @@ namespace AtOCCardRenderer
 
             GUILayout.Label($"Number of Cards: {_cardCount}");
             GUILayout.Label("Range Start Index");
-            if (int.TryParse(GUILayout.TextField(_rangeStart.ToString()), out int rsi))
+            if (int.TryParse(GUILayout.TextField(_config.rangeStart.ToString()), out int rsi))
             {
-                _rangeStart = Mathf.Clamp(rsi, 0, _cardCount - 1);
+                _config.rangeStart = Mathf.Clamp(rsi, 0, _cardCount - 1);
             }
 
             GUILayout.Label("Range End Index");
-            if (int.TryParse(GUILayout.TextField(_rangeEnd.ToString()), out int rei))
+            if (int.TryParse(GUILayout.TextField(_config.rangeEnd.ToString()), out int rei))
             {
-                _rangeEnd = Mathf.Clamp(rei, 0, _cardCount - 1);
+                _config.rangeEnd = Mathf.Clamp(rei, 0, _cardCount - 1);
             }
 
             if (GUILayout.Button("Render Range"))
             {
-                int start = Mathf.Min(_rangeStart, _rangeEnd);
-                int end = Mathf.Max(_rangeStart, _rangeEnd);
+                int start = Mathf.Min(_config.rangeStart, _config.rangeEnd);
+                int end = Mathf.Max(_config.rangeStart, _config.rangeEnd);
                 _renderTask = RenderRange(start, end);
                 StartCoroutine(_renderTask);
             }
@@ -155,7 +141,7 @@ namespace AtOCCardRenderer
             Camera.main.targetTexture = _renderTexture;
             RenderTexture.active = _renderTexture;
             Camera.main.Render();
-            _exportTexture.ReadPixels(new Rect(_srcX, _srcY, _srcWidth, _srcHeight), _dstX, _dstY);
+            _exportTexture.ReadPixels(new Rect(_config.srcX, _config.srcY, _config.srcWidth, _config.srcHeight), _config.dstX, _config.dstY);
             _exportTexture.Apply();
 
             File.WriteAllBytes($"RenderResults/{name}.png", _exportTexture.EncodeToPNG());
@@ -249,8 +235,8 @@ namespace AtOCCardRenderer
             if (_renderTexture) DestroyImmediate(_renderTexture);
             if (_exportTexture) DestroyImmediate(_exportTexture);
 
-            _renderTexture = new RenderTexture(_renderTextureWidth, _renderTextureHeight, 32, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
-            _exportTexture = new Texture2D(_exportTextureWidth, _exportTextureHeight, TextureFormat.ARGB32, false);
+            _renderTexture = new RenderTexture(_config.renderTextureWidth, _config.renderTextureHeight, 32, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+            _exportTexture = new Texture2D(_config.exportTextureWidth, _config.exportTextureHeight, TextureFormat.ARGB32, false);
         }
 
         private void SetupCanvas()
@@ -286,6 +272,27 @@ namespace AtOCCardRenderer
         {
             DestroyImmediate(_renderTexture);
             DestroyImmediate(_exportTexture);
+        }
+
+        private struct RenderConfig
+        {
+            public int renderTextureWidth = 800;
+            public int renderTextureHeight = 768;
+            public int exportTextureWidth = 400;
+            public int exportTextureHeight = 600;
+
+            public float srcX = 200f;
+            public float srcY = 85f;
+            public float srcWidth = 600f;
+            public float srcHeight = 768f;
+
+            public int dstX = 0;
+            public int dstY = 0;
+
+            public int rangeStart = 0;
+            public int rangeEnd = 5;
+
+            public RenderConfig() { }
         }
     }
 }

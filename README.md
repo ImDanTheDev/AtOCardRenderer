@@ -21,11 +21,13 @@ Render every card as individual components and more.
     ```
 3. Build
     ```shell
-    dotnet build -c Release
+    dotnet deploy -c Release
     ```
 4. Install plugin to Across the Obelisk
     ```sh
-    cp bin\Release\netstandard2.1\AtOCardRenderer.dll "..\Across the Obelisk\BepInEx\plugins\AtOCardRenderer.dll"
+    cp bin\Release\netstandard2.1\publish\AtOCardRenderer.dll "..\Across the Obelisk\BepInEx\plugins\AtOCardRenderer.dll"
+    cp bin\Release\netstandard2.1\publish\Magick.NET.Core.dll "..\Across the Obelisk\BepInEx\plugins\Magick.NET.Core.dll"
+    cp bin\Release\netstandard2.1\publish\Magick.NET-Q16-AnyCPU.dll "..\Across the Obelisk\BepInEx\plugins\Magick.NET-Q16-AnyCPU.dll"
     ```
 5. Launch game
 

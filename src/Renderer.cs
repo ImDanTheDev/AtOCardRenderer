@@ -2,6 +2,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using ImageMagick;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -18,8 +20,6 @@ namespace AtOCCardRenderer
         public BepInEx.Logging.ManualLogSource logger;
 
         private RenderConfig _config;
-        private GameObject _canvasGO;
-        private Canvas _renderCanvas;
         private RenderTexture _renderTexture;
         private Texture2D _exportTexture;
         private GameObject _cardItemGO;
@@ -46,12 +46,16 @@ namespace AtOCCardRenderer
         private int _cardsRendered;
         private int _cardsToRender;
         private float _originalOrthoSize;
+        private int _imagesTrimmed;
+        private int _imagesToTrim;
+        private List<Thread> _trimWriteThreads;
 
         private void OnEnable()
         {
             logger.LogInfo("Renderer shown");
             Directory.CreateDirectory(RENDER_FOLDER);
             _config = new RenderConfig();
+            _trimWriteThreads = new List<Thread>();
             FindTrash();
             SetTrashVisibility(false);
 
@@ -72,7 +76,30 @@ namespace AtOCCardRenderer
             _exportTexture.ReadPixels(new Rect(_config.srcX, _config.srcY, _config.srcWidth, _config.srcHeight), _config.dstX, _config.dstY);
             _exportTexture.Apply();
 
-            File.WriteAllBytes($"{RENDER_FOLDER}/{name}.png", _exportTexture.EncodeToPNG());
+            var pngBytes = _exportTexture.EncodeToPNG();
+
+            if (_config.crop)
+            {
+                _imagesToTrim++;
+                var thread = new Thread(() =>
+                {
+                    using var img = new MagickImage(pngBytes, MagickFormat.Png);
+                    var originalBorderColor = img.BorderColor;
+                    img.BorderColor.SetFromBytes(1, 1, 1, 1);
+                    img.Trim(new Percentage(95));
+                    img.BorderColor = originalBorderColor;
+                    img.Trim();
+                    img.Write($"{RENDER_FOLDER}/{name}.png");
+                    _imagesTrimmed++;
+                });
+                _trimWriteThreads.Add(thread);
+                thread.Start();
+            }
+            else
+            {
+                File.WriteAllBytes($"{RENDER_FOLDER}/{name}.png", pngBytes);
+            }
+
             Camera.main.targetTexture = null;
         }
 
@@ -85,13 +112,14 @@ namespace AtOCCardRenderer
             var range = cards.Values.Skip(firstIndex).Take(lastIndex - firstIndex + 1);
             _cardsToRender = lastIndex - firstIndex + 1;
             _cardsRendered = 0;
+            _imagesToTrim = 0;
+            _imagesTrimmed = 0;
 
             List<GameObject> toRender = new();
             List<GameObject> skipped = new();
-
             foreach (CardData card in range)
             {
-                _cardItem.SetCard(card.Id, true, null, null, false, false);
+                _cardItem.SetCard(card.Id, false, null, null, false, false);
                 Render(card.Id + "_Full");
                 if (_config.onlyRenderFullCards)
                 {
@@ -127,9 +155,10 @@ namespace AtOCCardRenderer
 
                 for (int i = toRender.Count - 1; i >= 0; i--)
                 {
-                    toRender[i].SetActive(true);
+                    var elem = toRender[i];
+                    elem.SetActive(true);
                     if (i + 1 < toRender.Count) toRender[i + 1].SetActive(false);
-                    Render(card.Id + "_" + toRender[i].name);
+                    Render(card.Id + "_" + elem.name);
                 }
 
                 toRender.ForEach(x => x.SetActive(true));
@@ -147,12 +176,15 @@ namespace AtOCCardRenderer
             _csv.Write();
             _csv.Reset();
 
-            GameManager.Instance.PlayLibraryAudio(NOTIFICATION_SOUND, 0f);
-
+            yield return new WaitUntil(() => _imagesTrimmed == _imagesToTrim);
+            CleanUpThreads();
             _renderTask = null;
             _cardsRendered = 0;
             _cardsToRender = 0;
+            _imagesTrimmed = 0;
+            _imagesToTrim = 0;
             _rendering = false;
+            GameManager.Instance.PlayLibraryAudio(NOTIFICATION_SOUND, 0f);
 
             logger.LogInfo($"Finished rendering range.");
         }
@@ -196,6 +228,8 @@ namespace AtOCCardRenderer
                 if (GUILayout.Button("Render Sample")) Render();
             }
 
+            _config.crop = GUILayout.Toggle(_config.crop, "Crop");
+
             GUILayout.Label($"Number of Cards: {_cardCount}");
             GUILayout.Label("Range Start Index");
             if (int.TryParse(GUILayout.TextField(_config.rangeStart.ToString()), out int rsi))
@@ -222,30 +256,35 @@ namespace AtOCCardRenderer
             GUI.enabled = true;
             if (_renderTask != null)
             {
-                GUILayout.Label($"Progress: {_cardsRendered}/{_cardsToRender}");
+                GUILayout.Label($"Render Progress: {_cardsRendered}/{_cardsToRender}");
+                GUILayout.Label($"Trim Progress: {_imagesTrimmed}/{_imagesToTrim}");
                 if (GUILayout.Button("Stop Render Range"))
                 {
                     StopCoroutine(_renderTask);
                     _renderTask = null;
                     _cardsRendered = 0;
                     _cardsToRender = 0;
+                    _imagesTrimmed = 0;
+                    _imagesToTrim = 0;
                     _rendering = false;
+                    CleanUpThreads();
                 }
             }
+        }
+
+        private void CleanUpThreads()
+        {
+            _trimWriteThreads.ForEach(x =>
+            {
+                if (x.IsAlive) x.Abort();
+            });
+            _trimWriteThreads.Clear();
         }
 
         private void SetupCanvas()
         {
             _originalOrthoSize = Camera.main.orthographicSize;
             Camera.main.orthographicSize = RENDER_ORTHO_SIZE;
-
-            _canvasGO = new("Render Canvas");
-            _renderCanvas = _canvasGO.AddComponent<Canvas>();
-            _renderCanvas.renderMode = RenderMode.WorldSpace;
-            CanvasScaler scaler = _canvasGO.AddComponent<CanvasScaler>();
-            scaler.referenceResolution = new Vector2(1920, 1080);
-            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.scaleFactor = 0.7f;
         }
 
         private void FindTrash()
@@ -299,7 +338,6 @@ namespace AtOCCardRenderer
         {
             _cardItemGO = Instantiate(GameManager.Instance.CardPrefab);
             _cardItemGO.name = "Render Card";
-            _cardItemGO.transform.parent = _renderCanvas.transform;
 
             _cardItem = _cardItemGO.GetComponent<CardItem>();
         }
@@ -312,7 +350,6 @@ namespace AtOCCardRenderer
 
         private void OnDisable()
         {
-            DestroyImmediate(_canvasGO);
             ResetTrashVisibility();
             DestroyTextures();
             DestroyImmediate(_cardItemGO);
@@ -323,21 +360,22 @@ namespace AtOCCardRenderer
 
         private struct RenderConfig
         {
-            public int renderTextureWidth = 800;
-            public int renderTextureHeight = 768;
-            public int exportTextureWidth = 400;
-            public int exportTextureHeight = 600;
+            public int renderTextureWidth = 1920;
+            public int renderTextureHeight = 1080;
+            public int exportTextureWidth = 542;
+            public int exportTextureHeight = 814;
 
-            public float srcX = 200f;
-            public float srcY = 85f;
-            public float srcWidth = 600f;
-            public float srcHeight = 768f;
+            public float srcX = 690f;
+            public float srcY = 133f;
+            public float srcWidth = 542f;
+            public float srcHeight = 814f;
 
             public int dstX = 0;
             public int dstY = 0;
 
             public int rangeStart = 0;
-            public int rangeEnd = 5;
+            public int rangeEnd = 4;
+            public bool crop = false;
 
             public bool onlyRenderFullCards;
 

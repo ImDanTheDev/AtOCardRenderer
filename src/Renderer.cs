@@ -77,23 +77,25 @@ namespace AtOCCardRenderer
             _exportTexture.Apply();
             Camera.main.targetTexture = null;
 
-            byte[] data = _exportTexture.EncodeToPNG();
+            byte[] rawData = _exportTexture.GetRawTextureData();
 
+            // TODO: Dont crop _Full cards.
             if (_config.crop)
             {
-                ThreadPool.QueueUserWorkItem(Crop, (fileName, data));
+                ThreadPool.QueueUserWorkItem(Crop, (fileName, rawData, _exportTexture.width, _exportTexture.height));
             }
             else
             {
-                ThreadPool.QueueUserWorkItem(ThreadedSave, (fileName, data));
+                ThreadPool.QueueUserWorkItem(ThreadedSave, (fileName, rawData, _exportTexture.width, _exportTexture.height));
             }
         }
 
         private void Crop(object obj)
         {
-            (string, byte[]) state = ((string, byte[]))obj;
             if (_cancellationTokenSource.Token.IsCancellationRequested) return;
-            using var img = new MagickImage(state.Item2, MagickFormat.Png);
+            (string, byte[], int, int) state = ((string, byte[], int, int))obj;
+            var pngData = ImageConversion.EncodeArrayToPNG(state.Item2, _exportTexture.graphicsFormat, (uint)state.Item3, (uint)state.Item4);
+            using var img = new MagickImage(pngData, MagickFormat.Png);
             var originalBorderColor = img.BorderColor;
             img.BorderColor.SetFromBytes(1, 1, 1, 1);
             img.Trim(new Percentage(95));
@@ -106,8 +108,9 @@ namespace AtOCCardRenderer
         private void ThreadedSave(object obj)
         {
             if (_cancellationTokenSource.Token.IsCancellationRequested) return;
-            (string, byte[]) state = ((string, byte[]))obj;
-            File.WriteAllBytes($"{RENDER_FOLDER}/{state.Item1}.png", state.Item2);
+            (string, byte[], int, int) state = ((string, byte[], int, int))obj;
+            var pngData = ImageConversion.EncodeArrayToPNG(state.Item2, _exportTexture.graphicsFormat, (uint)state.Item3, (uint)state.Item4);
+            File.WriteAllBytes($"{RENDER_FOLDER}/{state.Item1}.png", pngData);
             _imagesRendered++;
         }
 

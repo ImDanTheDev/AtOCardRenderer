@@ -21,7 +21,7 @@ Render every card as individual components and more.
     ```
 3. Build
     ```shell
-    dotnet deploy -c Release
+    dotnet publish -c Release
     ```
 4. Install plugin to Across the Obelisk
     ```sh

@@ -43,19 +43,19 @@ namespace AtOCCardRenderer
         private bool _rendering;
         private bool _showAdvanced;
         private int _cardCount;
-        private int _cardsRendered;
-        private int _cardsToRender;
         private float _originalOrthoSize;
-        private int _imagesTrimmed;
-        private int _imagesToTrim;
-        private List<Thread> _trimWriteThreads;
+
+        private int _cardsProcessed;
+        private int _cardsToProcess;
+        private int _imagesRendered;
+        private int _imagesToRender;
+        private CancellationTokenSource _cancellationTokenSource;
 
         private void OnEnable()
         {
             logger.LogInfo("Renderer shown");
             Directory.CreateDirectory(RENDER_FOLDER);
             _config = new RenderConfig();
-            _trimWriteThreads = new List<Thread>();
             FindTrash();
             SetTrashVisibility(false);
 
@@ -68,52 +68,62 @@ namespace AtOCCardRenderer
             _csv = new CSVBuilder(RENDER_SUMMARY);
         }
 
-        private void Render(string name = "Sample")
+        private void Render(string fileName = "Sample")
         {
+            _imagesToRender++;
             Camera.main.targetTexture = _renderTexture;
             RenderTexture.active = _renderTexture;
             Camera.main.Render();
             _exportTexture.ReadPixels(new Rect(_config.srcX, _config.srcY, _config.srcWidth, _config.srcHeight), _config.dstX, _config.dstY);
             _exportTexture.Apply();
+            Camera.main.targetTexture = null;
 
-            var pngBytes = _exportTexture.EncodeToPNG();
+            byte[] data = _exportTexture.EncodeToPNG();
 
             if (_config.crop)
             {
-                _imagesToTrim++;
-                var thread = new Thread(() =>
-                {
-                    using var img = new MagickImage(pngBytes, MagickFormat.Png);
-                    var originalBorderColor = img.BorderColor;
-                    img.BorderColor.SetFromBytes(1, 1, 1, 1);
-                    img.Trim(new Percentage(95));
-                    img.BorderColor = originalBorderColor;
-                    img.Trim();
-                    img.Write($"{RENDER_FOLDER}/{name}.png");
-                    _imagesTrimmed++;
-                });
-                _trimWriteThreads.Add(thread);
-                thread.Start();
+                ThreadPool.QueueUserWorkItem(Crop, (fileName, data));
             }
             else
             {
-                File.WriteAllBytes($"{RENDER_FOLDER}/{name}.png", pngBytes);
+                ThreadPool.QueueUserWorkItem(ThreadedSave, (fileName, data));
             }
+        }
 
-            Camera.main.targetTexture = null;
+        private void Crop(object obj)
+        {
+            (string, byte[]) state = ((string, byte[]))obj;
+            if (_cancellationTokenSource.Token.IsCancellationRequested) return;
+            using var img = new MagickImage(state.Item2, MagickFormat.Png);
+            var originalBorderColor = img.BorderColor;
+            img.BorderColor.SetFromBytes(1, 1, 1, 1);
+            img.Trim(new Percentage(95));
+            img.BorderColor = originalBorderColor;
+            img.Trim();
+            img.Write($"{RENDER_FOLDER}/{state.Item1}.png");
+            _imagesRendered++;
+        }
+
+        private void ThreadedSave(object obj)
+        {
+            (string, byte[]) state = ((string, byte[]))obj;
+            File.WriteAllBytes($"{RENDER_FOLDER}/{state.Item1}.png", state.Item2);
+            _imagesRendered++;
         }
 
         private IEnumerator RenderRange(int firstIndex, int lastIndex)
         {
+            int a = _cardItem.transform.Find("CardGO").childCount;
+            _cancellationTokenSource = new CancellationTokenSource();
             _rendering = true;
             yield return null;
             Dictionary<string, CardData> cards = Globals.Instance.Cards;
 
             var range = cards.Values.Skip(firstIndex).Take(lastIndex - firstIndex + 1);
-            _cardsToRender = lastIndex - firstIndex + 1;
-            _cardsRendered = 0;
-            _imagesToTrim = 0;
-            _imagesTrimmed = 0;
+            _cardsToProcess = lastIndex - firstIndex + 1;
+            _cardsProcessed = 0;
+            _imagesToRender = 0;
+            _imagesRendered = 0;
 
             List<GameObject> toRender = new();
             List<GameObject> skipped = new();
@@ -123,7 +133,6 @@ namespace AtOCCardRenderer
                 Render(card.Id + "_Full");
                 if (_config.onlyRenderFullCards)
                 {
-                    _cardsRendered++;
                     _csv.AddCard(card, toRender);
                     yield return null;
                     continue;
@@ -168,21 +177,20 @@ namespace AtOCCardRenderer
                 skipped.Clear();
 
                 _csv.AddCard(card, toRender);
-
-                _cardsRendered++;
+                _cardsProcessed++;
                 yield return null;
             }
 
             _csv.Write();
             _csv.Reset();
 
-            yield return new WaitUntil(() => _imagesTrimmed == _imagesToTrim);
-            CleanUpThreads();
+            yield return new WaitUntil(() => _imagesRendered == _imagesToRender);
+            _cancellationTokenSource.Cancel();
             _renderTask = null;
-            _cardsRendered = 0;
-            _cardsToRender = 0;
-            _imagesTrimmed = 0;
-            _imagesToTrim = 0;
+            _imagesToRender = 0;
+            _imagesRendered = 0;
+            _cardsProcessed = 0;
+            _cardsToProcess = 0;
             _rendering = false;
             GameManager.Instance.PlayLibraryAudio(NOTIFICATION_SOUND, 0f);
 
@@ -256,29 +264,20 @@ namespace AtOCCardRenderer
             GUI.enabled = true;
             if (_renderTask != null)
             {
-                GUILayout.Label($"Render Progress: {_cardsRendered}/{_cardsToRender}");
-                GUILayout.Label($"Trim Progress: {_imagesTrimmed}/{_imagesToTrim}");
+                GUILayout.Label($"Cards Processed: {_cardsProcessed}/{_cardsToProcess}");
+                GUILayout.Label($"Render Progress: {_imagesRendered}/{_imagesToRender}");
                 if (GUILayout.Button("Stop Render Range"))
                 {
                     StopCoroutine(_renderTask);
                     _renderTask = null;
-                    _cardsRendered = 0;
-                    _cardsToRender = 0;
-                    _imagesTrimmed = 0;
-                    _imagesToTrim = 0;
+                    _imagesToRender = 0;
+                    _imagesRendered = 0;
+                    _cardsProcessed = 0;
+                    _cardsToProcess = 0;
                     _rendering = false;
-                    CleanUpThreads();
+                    _cancellationTokenSource.Cancel();
                 }
             }
-        }
-
-        private void CleanUpThreads()
-        {
-            _trimWriteThreads.ForEach(x =>
-            {
-                if (x.IsAlive) x.Abort();
-            });
-            _trimWriteThreads.Clear();
         }
 
         private void SetupCanvas()

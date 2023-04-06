@@ -6,7 +6,6 @@ using System.Threading;
 using ImageMagick;
 using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace AtOCCardRenderer
 {
@@ -106,6 +105,7 @@ namespace AtOCCardRenderer
 
         private void ThreadedSave(object obj)
         {
+            if (_cancellationTokenSource.Token.IsCancellationRequested) return;
             (string, byte[]) state = ((string, byte[]))obj;
             File.WriteAllBytes($"{RENDER_FOLDER}/{state.Item1}.png", state.Item2);
             _imagesRendered++;
@@ -113,7 +113,6 @@ namespace AtOCCardRenderer
 
         private IEnumerator RenderRange(int firstIndex, int lastIndex)
         {
-            int a = _cardItem.transform.Find("CardGO").childCount;
             _cancellationTokenSource = new CancellationTokenSource();
             _rendering = true;
             yield return null;
@@ -127,6 +126,16 @@ namespace AtOCCardRenderer
 
             List<GameObject> toRender = new();
             List<GameObject> skipped = new();
+
+            // TODO: Only need to do this once, not at the start of each ranged render.
+            GameObject cardGO = _cardItem.transform.Find("CardGO").gameObject;
+            GameObject lockGO = _cardItem.transform.Find("Lock").gameObject;
+            List<(GameObject, SpriteRenderer, TMP_Text)> children = new();
+            foreach (Transform child in cardGO.transform)
+            {
+                children.Add((child.gameObject, child.GetComponent<SpriteRenderer>(), child.GetComponent<TMP_Text>()));
+            }
+
             foreach (CardData card in range)
             {
                 _cardItem.SetCard(card.Id, false, null, null, false, false);
@@ -137,29 +146,24 @@ namespace AtOCCardRenderer
                     yield return null;
                     continue;
                 }
-                GameObject cardGO = _cardItem.transform.Find("CardGO").gameObject;
 
-                var lockGO = _cardItem.transform.Find("Lock").gameObject;
                 if (lockGO.activeSelf)
                 {
                     toRender.Add(lockGO);
                     lockGO.SetActive(false);
                 }
 
-                foreach (Transform child in cardGO.transform)
+                foreach ((GameObject go, SpriteRenderer sr, TMP_Text txt) in children)
                 {
-                    GameObject go = child.gameObject;
-                    if (go.activeSelf)
+                    if (!go.activeSelf) continue;
+                    if (sr?.sprite == null || txt?.text.Length == 0)
                     {
-                        if (go.GetComponent<SpriteRenderer>()?.sprite == null || go.GetComponent<TMP_Text>()?.text.Length == 0)
-                        {
-                            skipped.Add(go);
-                            go.SetActive(false);
-                            continue;
-                        }
-                        toRender.Add(go);
+                        skipped.Add(go);
                         go.SetActive(false);
+                        continue;
                     }
+                    toRender.Add(go);
+                    go.SetActive(false);
                 }
 
                 for (int i = toRender.Count - 1; i >= 0; i--)
@@ -167,7 +171,7 @@ namespace AtOCCardRenderer
                     var elem = toRender[i];
                     elem.SetActive(true);
                     if (i + 1 < toRender.Count) toRender[i + 1].SetActive(false);
-                    Render(card.Id + "_" + elem.name);
+                    Render($"{card.Id}_{elem.name}");
                 }
 
                 toRender.ForEach(x => x.SetActive(true));
